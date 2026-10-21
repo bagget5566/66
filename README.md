@@ -1,17 +1,20 @@
--- BAGGET SCRIPTS v20.0 [MOBILE & LOW-CPU OPTIMIZED STUDIO SUITE]
+-- BAGGET SCRIPTS v20.1 [MOBILE & LOW-CPU OPTIMIZED STUDIO SUITE - FIXED]
 -- Touch Controls, Mobile Joystick Fly/Freecam, Object Pooling & Throttled Physics (Zero FPS Drop)
+-- ВАЖНО: Поместите этот код в LocalScript внутри StarterPlayerScripts или StarterGui!
 
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
 local UIS = game:GetService("UserInputService")
 local Lighting = game:GetService("Lighting")
-local Camera = workspace.CurrentCamera
 
-local LP = Players.LocalPlayer
+-- Безопасное ожидание загрузки игрока и камеры (исправляет невидимость UI при старте)
+local LP = Players.LocalPlayer or Players.PlayerAdded:Wait()
 local PG = LP:WaitForChild("PlayerGui")
+local Camera = workspace.CurrentCamera or workspace:WaitForChild("Camera")
 local Mouse = LP:GetMouse()
 
-local IS_MOBILE = UIS.TouchEnabled and not UIS.KeyboardEnabled
+-- Надежное определение сенсорного экрана (работает и на телефоне, и в эмуляторе Studio)
+local IS_MOBILE = UIS.TouchEnabled
 
 -- Безопасная очистка предыдущей сессии
 if _G.BaggetCleanup then
@@ -130,7 +133,7 @@ local S = {
 	TelemetryHUD = true,
 	RadarHUD = false,
 	PartInspector = false,
-	MobileQuickPad = IS_MOBILE,
+	MobileQuickPad = true, -- Всегда доступно по умолчанию для удобства на телефоне
 	
 	SpeedLock = false,
 	AutoBhop = false,
@@ -273,7 +276,7 @@ end)
 
 local function getValidTargets(checkTeamForMode)
 	local now = tick()
-	if now - lastTargetUpdate > 0.2 then -- Троттлинг 5 раз в секунду для экономии CPU
+	if now - lastTargetUpdate > 0.2 then
 		lastTargetUpdate = now
 		table.clear(cachedTargetsList)
 		if CFG.TargetPlayers then
@@ -350,7 +353,6 @@ local function isVisible(targetPart)
 	return visible
 end
 
--- Физика: Переиспользуемый OverlapParams (без аллокаций памяти в цикле)
 local physOverlap = OverlapParams.new()
 physOverlap.FilterType = Enum.RaycastFilterType.Exclude
 physOverlap.MaxParts = CFG.MaxPhysicsParts
@@ -365,6 +367,7 @@ local SG = Instance.new("ScreenGui")
 SG.Name = "BaggetUI"
 SG.ResetOnSpawn = false
 SG.IgnoreGuiInset = true
+SG.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
 SG.DisplayOrder = 99999
 SG.Parent = PG
 
@@ -377,7 +380,7 @@ DrawLayer.Parent = SG
 
 -- Компактная телеметрия сверху
 local TelemetryBar = Instance.new("Frame")
-TelemetryBar.Size = UDim2.new(0, 340, 0, 22)
+TelemetryBar.Size = UDim2.new(0, 320, 0, 22)
 TelemetryBar.AnchorPoint = Vector2.new(0.5, 0)
 TelemetryBar.Position = UDim2.new(0.5, 0, 0, 6)
 TelemetryBar.BackgroundColor3 = PANEL_BG
@@ -399,17 +402,19 @@ TelemetryText.TextSize = 11
 -- ПЛАВАЮЩАЯ КНОПКА ОТКРЫТИЯ МЕНЮ ДЛЯ ТЕЛЕФОНА
 local OpenMenuBtn = Instance.new("TextButton")
 OpenMenuBtn.Name = "MobileToggleBtn"
-OpenMenuBtn.Size = UDim2.new(0, 86, 0, 34)
-OpenMenuBtn.Position = UDim2.new(0, 14, 0.5, -17)
+OpenMenuBtn.Size = UDim2.new(0, 92, 0, 36)
+OpenMenuBtn.Position = UDim2.new(0, 14, 0.45, 0)
 OpenMenuBtn.BackgroundColor3 = BLACK
-OpenMenuBtn.BackgroundTransparency = 0.15
+OpenMenuBtn.BackgroundTransparency = 0.1
 OpenMenuBtn.BorderSizePixel = 1
 OpenMenuBtn.BorderColor3 = GREEN
 OpenMenuBtn.Text = "[BAGGET]"
 OpenMenuBtn.TextColor3 = GREEN
 OpenMenuBtn.Font = Enum.Font.Code
-OpenMenuBtn.TextSize = 12
+OpenMenuBtn.TextSize = 13
+OpenMenuBtn.AutoButtonColor = true
 OpenMenuBtn.Active = true
+OpenMenuBtn.ZIndex = 10
 OpenMenuBtn.Parent = SG
 Instance.new("UICorner", OpenMenuBtn).CornerRadius = UDim.new(0, 8)
 local openBtnStroke = Instance.new("UIStroke", OpenMenuBtn)
@@ -421,9 +426,10 @@ local MobilePad = Instance.new("Frame")
 MobilePad.Name = "MobileQuickPad"
 MobilePad.Size = UDim2.new(0, 125, 0, 165)
 MobilePad.AnchorPoint = Vector2.new(1, 0.5)
-MobilePad.Position = UDim2.new(1, -14, 0.45, 0)
+MobilePad.Position = UDim2.new(1, -14, 0.42, 0)
 MobilePad.BackgroundTransparency = 1
 MobilePad.Visible = S.MobileQuickPad
+MobilePad.ZIndex = 8
 MobilePad.Parent = SG
 
 local padLayout = Instance.new("UIGridLayout", MobilePad)
@@ -434,11 +440,12 @@ padLayout.HorizontalAlignment = Enum.HorizontalAlignment.Right
 local function createMobileTouchBtn(title)
 	local b = Instance.new("TextButton")
 	b.BackgroundColor3 = BLACK
-	b.BackgroundTransparency = 0.25
+	b.BackgroundTransparency = 0.2
 	b.Text = title
 	b.TextColor3 = GREEN
 	b.Font = Enum.Font.Code
 	b.TextSize = 11
+	b.AutoButtonColor = true
 	b.Parent = MobilePad
 	Instance.new("UICorner", b).CornerRadius = UDim.new(0, 6)
 	local st = Instance.new("UIStroke", b)
@@ -613,20 +620,25 @@ thudBarFill.BackgroundColor3 = GREEN
 thudBarFill.BorderSizePixel = 0
 Instance.new("UICorner", thudBarFill).CornerRadius = UDim.new(0, 3)
 
--- Главное окно меню (Адаптивная высота под экран телефона)
-local menuWidth = IS_MOBILE and 330 or 355
-local menuHeight = IS_MOBILE and 330 or 540
+-- Главное окно меню (Адаптивный размер под экран телефона или ПК)
+local vpSize = Camera.ViewportSize
+local isSmallScreen = IS_MOBILE or (vpSize.Y < 580)
+local menuWidth = isSmallScreen and 320 or 355
+local menuHeight = isSmallScreen and 310 or 500
 
 local P = Instance.new("Frame")
+P.Name = "MainPanel"
 P.Size = UDim2.new(0, menuWidth, 0, menuHeight)
 P.AnchorPoint = Vector2.new(0.5, 0.5)
 P.Position = UDim2.new(0.5, 0, 0.5, 0)
 P.BackgroundColor3 = PANEL_BG
-P.BackgroundTransparency = 0.06
+P.BackgroundTransparency = 0.05
 P.BorderSizePixel = 2
 P.BorderColor3 = GREEN
 P.Active = true
+P.Visible = true
 P.ClipsDescendants = true
+P.ZIndex = 5
 P.Parent = SG
 Instance.new("UICorner", P).CornerRadius = UDim.new(0, 6)
 
@@ -644,7 +656,7 @@ local TL = Instance.new("TextLabel")
 TL.Size = UDim2.new(1, -75, 1, 0)
 TL.Position = UDim2.new(0, 10, 0, 0)
 TL.BackgroundTransparency = 1
-TL.Text = "BAGGET v20.0 [MOBILE TURBO]"
+TL.Text = "BAGGET v20.1 [MOBILE TURBO]"
 TL.TextColor3 = GREEN
 TL.TextSize = 12
 TL.Font = Enum.Font.Code
@@ -739,7 +751,7 @@ local function makeCategory(title, defaultOpen)
 	contentLayout.Parent = content
 
 	local isOpen = defaultOpen or false
-	headerBtn.MouseButton1Click:Connect(function()
+	headerBtn.Activated:Connect(function()
 		isOpen = not isOpen
 		content.Visible = isOpen
 		headerBtn.Text = (isOpen and "  [▼] " or "  [►] ") .. title
@@ -759,8 +771,9 @@ local function makeToggle(parent, name, def, cb)
 	r.Parent = parent
 	Instance.new("UICorner", r).CornerRadius = UDim.new(0, 4)
 	
+	local hasKeybindBtn = UIS.KeyboardEnabled
 	local l = Instance.new("TextLabel")
-	l.Size = UDim2.new(1, IS_MOBILE and -16 or -92, 1, 0)
+	l.Size = UDim2.new(1, hasKeybindBtn and -92 or -16, 1, 0)
 	l.Position = UDim2.new(0, 8, 0, 0)
 	l.BackgroundTransparency = 1
 	l.Text = (def and "[ON] " or "[OFF] ") .. name
@@ -772,13 +785,13 @@ local function makeToggle(parent, name, def, cb)
 	l.Parent = r
 
 	local b = Instance.new("TextButton")
-	b.Size = UDim2.new(1, IS_MOBILE and 0 or -84, 1, 0)
+	b.Size = UDim2.new(1, hasKeybindBtn and -84 or 0, 1, 0)
 	b.BackgroundTransparency = 1
 	b.Text = ""
 	b.Parent = r
 	
 	local bindBtn = nil
-	if not IS_MOBILE then
+	if hasKeybindBtn then
 		bindBtn = Instance.new("TextButton")
 		bindBtn.Size = UDim2.new(0, 72, 0, 22)
 		bindBtn.Position = UDim2.new(1, -78, 0.5, -11)
@@ -792,7 +805,7 @@ local function makeToggle(parent, name, def, cb)
 		bindBtn.Parent = r
 		Instance.new("UICorner", bindBtn).CornerRadius = UDim.new(0, 3)
 
-		bindBtn.MouseButton1Click:Connect(function()
+		bindBtn.Activated:Connect(function()
 			bindBtn.Text = "[...]"
 			bindingFeatureName = name
 		end)
@@ -806,7 +819,7 @@ local function makeToggle(parent, name, def, cb)
 		pcall(cb, st)
 	end
 
-	b.MouseButton1Click:Connect(function() setState(not st) end)
+	b.Activated:Connect(function() setState(not st) end)
 
 	_G.BaggetBinds[name] = {
 		trigger = function() setState(not st) end,
@@ -833,7 +846,7 @@ local function makeButton(parent, text, bgCol, cb)
 	btn.LayoutOrder = nextOrder()
 	btn.Parent = parent
 	Instance.new("UICorner", btn).CornerRadius = UDim.new(0, 4)
-	btn.MouseButton1Click:Connect(function() pcall(cb) end)
+	btn.Activated:Connect(function() pcall(cb) end)
 	return btn
 end
 
@@ -961,7 +974,7 @@ local function makeColorPicker(parent, name, defaultColor, cb)
 		Color3.fromRGB(255, 255, 255)
 	}
 	local currentIndex = 1
-	colorBtn.MouseButton1Click:Connect(function()
+	colorBtn.Activated:Connect(function()
 		currentIndex = currentIndex + 1
 		if currentIndex > #presets then currentIndex = 1 end
 		local newCol = presets[currentIndex]
@@ -1025,7 +1038,7 @@ local function performDash()
 	end
 end
 
--- Пул платформ (до 5 штук по кругу без засорения карты)
+-- Пул платформ
 local padPool = {}
 local padPoolIdx = 1
 local function spawnNeonPad()
@@ -1131,7 +1144,7 @@ local function toggleFlingTouch(on)
 	end
 end
 
--- Грави-пушка (Поддержка прицела по центру экрана для телефона)
+-- Грави-пушка
 local heldPart = nil
 local gravBeam = nil
 local gravAtt0, gravAtt1 = nil, nil
@@ -1178,11 +1191,11 @@ local function grabOrThrowPart()
 	end
 end
 
--- Привязка быстрых кнопок MobilePad
-btnDash.MouseButton1Click:Connect(performDash)
-btnPad.MouseButton1Click:Connect(spawnNeonPad)
-btnGrab.MouseButton1Click:Connect(grabOrThrowPart)
-btnNoclip.MouseButton1Click:Connect(function()
+-- Привязка быстрых кнопок MobilePad через Activated
+btnDash.Activated:Connect(performDash)
+btnPad.Activated:Connect(spawnNeonPad)
+btnGrab.Activated:Connect(grabOrThrowPart)
+btnNoclip.Activated:Connect(function()
 	if _G.BaggetBinds["Noclip (Phase Walls)"] then
 		_G.BaggetBinds["Noclip (Phase Walls)"].trigger()
 	end
@@ -1270,14 +1283,13 @@ local function resetBigHeads()
 end
 
 -- ==========================================
--- ПУЛ ОБЪЕКТОВ ДЛЯ LAGG-FREE FX НА ТЕЛЕФОНАХ
+-- ПУЛ ОБЪЕКТОВ ДЛЯ LAG-FREE FX НА ТЕЛЕФОНАХ
 -- ==========================================
 local myPulse, myAuraParts, myHalo, myChinaHat, myCyberShield, myTrail, myTrailAtts = nil, {}, nil, nil, nil, nil, {}
 local myOrbs = {}
 local myWings = {}
 local myGyroRings = {}
 
--- Пул молний (4 сегмента, перемещаются без пересоздания)
 local boltPool = {}
 local function toggleLightningFX(on)
 	for _, b in ipairs(boltPool) do if b then b:Destroy() end end
@@ -1296,7 +1308,6 @@ local function toggleLightningFX(on)
 	end
 end
 
--- Пул фантомного следа (4 силуэта по очереди)
 local ghostPool = {}
 local ghostPoolIdx = 1
 local function toggleGhostTrail(on)
@@ -1317,7 +1328,6 @@ local function toggleGhostTrail(on)
 	end
 end
 
--- Пул волн под ногами (3 кольца по очереди)
 local wavePool = {}
 local waveIdx = 1
 local function toggleStepWaves(on)
@@ -1427,7 +1437,7 @@ local function toggleCyberWings(on)
 	table.clear(myWings)
 	if on then
 		for side = -1, 1, 2 do
-			for feather = 1, 3 do -- 3 сегмента на крыло для мобильного FPS
+			for feather = 1, 3 do
 				local p = Instance.new("Part", workspace)
 				p.Name = "BaggetWing"
 				p.Size = Vector3.new(0.15, 0.5 + (4 - feather) * 0.4, 1.5 + (4 - feather) * 0.45)
@@ -1532,7 +1542,6 @@ bindConnection(RunService.Heartbeat, function(dt)
 	local now = tick()
 
 	if h and r then
-		-- Полет (Поддержка мобильного джойстика + кнопок ▲/▼ и клавиатуры)
 		if S.Fly and flyObj and flyObj.Parent then
 			local moveVec = h.MoveDirection
 			local vert = mobileVerticalInput
@@ -1549,12 +1558,10 @@ bindConnection(RunService.Heartbeat, function(dt)
 			end
 		end
 
-		-- Jetpack (Кнопка ▲ на телефоне или Пробел)
 		if S.Jetpack and (mobileVerticalInput > 0 or (not UIS:GetFocusedTextBox() and UIS:IsKeyDown(Enum.KeyCode.Space))) then
 			r.AssemblyLinearVelocity = Vector3.new(r.AssemblyLinearVelocity.X, CFG.JetpackPower, r.AssemblyLinearVelocity.Z)
 		end
 
-		-- Fake Lag
 		if S.FakeLag then
 			if now - lastFakeLagTick > 0.28 then
 				lastFakeLagTick = now
@@ -1564,7 +1571,6 @@ bindConnection(RunService.Heartbeat, function(dt)
 			end
 		end
 
-		-- Anti-Void
 		if h.FloorMaterial ~= Enum.Material.Air and r.Position.Y > -50 then
 			lastSafePosition = r.CFrame
 		end
@@ -1582,7 +1588,6 @@ bindConnection(RunService.Heartbeat, function(dt)
 			h:ChangeState(Enum.HumanoidStateType.Jumping)
 		end
 
-		-- Spider Climb
 		if S.SpiderClimb and h.MoveDirection.Magnitude > 0.05 then
 			raycastParams.FilterDescendantsInstances = {myChar, Camera, airWalkPart}
 			local checkDir = h.MoveDirection.Unit * 2.8
@@ -1593,7 +1598,6 @@ bindConnection(RunService.Heartbeat, function(dt)
 		end
 	end
 
-	-- Gravity Gun
 	if S.GravityGun and heldPart then
 		if heldPart.Parent and not heldPart.Anchored then
 			local targetPos = Camera.CFrame.Position + (Camera.CFrame.LookVector * CFG.GravGunDist)
@@ -1604,7 +1608,6 @@ bindConnection(RunService.Heartbeat, function(dt)
 		end
 	end
 
-	-- AirWalk с поддержкой мобильных кнопок ▲ UP / ▼ DOWN
 	if S.AirWalk and airWalkPart and r then
 		local vert = mobileVerticalInput
 		if not UIS:GetFocusedTextBox() then
@@ -1616,7 +1619,7 @@ bindConnection(RunService.Heartbeat, function(dt)
 		if S.RainbowMode then airWalkPart.Color = currentThemeColor end
 	end
 
-	-- ТРОТТЛИНГ ТЯЖЕЛОЙ ФИЗИКИ (20 Гц вместо 60 Гц — защита от падения FPS)
+	-- ТРОТТЛИНГ ТЯЖЕЛОЙ ФИЗИКИ (20 Гц)
 	if now - lastPhysicsTick >= 0.05 then
 		lastPhysicsTick = now
 		if r and myChar and (S.BlackHole or S.TornadoVortex or S.MagnetRepel) then
@@ -1669,7 +1672,6 @@ bindConnection(RunService.Heartbeat, function(dt)
 			end
 		end
 
-		-- Anti-Fling (20 Гц)
 		if S.AntiFling then
 			for _, p in ipairs(Players:GetPlayers()) do
 				if p ~= LP and p.Character then
@@ -1683,7 +1685,6 @@ bindConnection(RunService.Heartbeat, function(dt)
 			end
 		end
 
-		-- Hitbox Expander & Big Heads (20 Гц)
 		if S.HitboxExpander or S.BigHeads then
 			local targets = getValidTargets(CFG.AimTeamCheck)
 			for _, t in ipairs(targets) do
@@ -1711,7 +1712,6 @@ bindConnection(RunService.Heartbeat, function(dt)
 		end
 	end
 
-	-- Интеракции с выбранной целью
 	if currentSelectedTarget and currentSelectedTarget.RootPart and currentSelectedTarget.RootPart.Parent and r and h then
 		local tRoot = currentSelectedTarget.RootPart
 		if S.OrbitTarget then
@@ -1865,6 +1865,7 @@ local fpsSmoothed = 60
 local lastHUDTick = 0
 
 bindConnection(RunService.RenderStepped, function(dt)
+	Camera = workspace.CurrentCamera or Camera
 	fxAngle = fxAngle + dt * 2.5
 	fpsSmoothed = math.floor(fpsSmoothed * 0.9 + (1 / math.max(dt, 0.001)) * 0.1)
 
@@ -1890,7 +1891,6 @@ bindConnection(RunService.RenderStepped, function(dt)
 	local myHead = myChar and myChar:FindFirstChild("Head")
 	local myRoot = getRoot()
 
-	-- Freecam (Поддержка мобильного джойстика + кнопок ▲/▼)
 	if S.Freecam then
 		local moveVec = Vector3.zero
 		if myHum and myHum.MoveDirection.Magnitude > 0.05 then
@@ -1938,7 +1938,6 @@ bindConnection(RunService.RenderStepped, function(dt)
 
 	local allTargets = getValidTargets(false)
 
-	-- Троттлинг текстовых HUD (6 раз в секунду)
 	local now = tick()
 	if now - lastHUDTick > 0.16 then
 		lastHUDTick = now
@@ -1962,7 +1961,6 @@ bindConnection(RunService.RenderStepped, function(dt)
 		end
 	end
 
-	-- Локальные FX через Пул Объектов (0 аллокаций памяти)
 	if S.Pulse and myPulse then
 		if myChar and myPulse.Adornee ~= myChar then myPulse.Adornee = myChar end
 		myPulse.OutlineColor = currentThemeColor
@@ -2068,7 +2066,6 @@ bindConnection(RunService.RenderStepped, function(dt)
 		end
 	end
 
-	-- Crosshair
 	CustomCrosshair.Visible = S.Crosshair
 	if S.Crosshair then
 		CustomCrosshair.Rotation = (fxAngle * 45) % 360
@@ -2092,7 +2089,6 @@ bindConnection(RunService.RenderStepped, function(dt)
 		FOVFrame.Size = UDim2.fromOffset(CFG.AimFOV * 2, CFG.AimFOV * 2)
 	end
 
-	-- 360 Radar HUD
 	RadarFrame.Visible = S.RadarHUD
 	if S.RadarHUD and myRoot then
 		local camLook = Camera.CFrame.LookVector
@@ -2128,7 +2124,6 @@ bindConnection(RunService.RenderStepped, function(dt)
 		end
 	end
 
-	-- ESP, Boxes, Tracers, Skeletons
 	local activeModels = {}
 	local screenCenterBottom = Vector2.new(Camera.ViewportSize.X * 0.5, Camera.ViewportSize.Y - 10)
 
@@ -2246,7 +2241,6 @@ bindConnection(RunService.RenderStepped, function(dt)
 	for model, lf in pairs(lookLaserFrames) do if not activeModels[model] then lf:Destroy() lookLaserFrames[model] = nil end end
 	for model, _ in pairs(skeletonPool) do if not activeModels[model] then clearSkeleton(model) end end
 
-	-- Aimbot (Авто-захват в FOV на мобильном телефоне, ПКМ на ПК)
 	local bestTarget = nil
 	local bestDist = CFG.AimFOV
 	local viewportCenter = Vector2.new(Camera.ViewportSize.X * 0.5, Camera.ViewportSize.Y * 0.5)
@@ -2402,7 +2396,7 @@ makeToggle(catTroll, "Anti-Fling Protection", false, function(v)
 	if not v then restoreAntiFling() end
 end)
 
--- 3. Локальный Визуал Персонажа (Pooled Client FX)
+-- 3. Локальный Визуал Персонажа
 local catFX = makeCategory("CHARACTER VISUAL FX (ZERO-LAG)", false)
 makeToggle(catFX, "Cyber Neon Wings (Animated)", false, function(v) S.CyberWings = v toggleCyberWings(v) end)
 makeToggle(catFX, "Gyroscopic Matrix Rings", false, function(v) S.GyroRings = v toggleGyroRings(v) end)
@@ -2500,7 +2494,7 @@ TB.InputBegan:Connect(function(input)
 	end
 end)
 
--- Перетаскивание плавающей кнопки [BAGGET]
+-- Перетаскивание и нажатие плавающей кнопки [BAGGET]
 local draggingOpenBtn = false
 local openBtnDragStart, openBtnStartPos
 local openBtnMoved = false
@@ -2514,6 +2508,12 @@ OpenMenuBtn.InputBegan:Connect(function(input)
 	end
 end)
 
+OpenMenuBtn.Activated:Connect(function()
+	if not openBtnMoved then
+		P.Visible = not P.Visible
+	end
+end)
+
 bindConnection(UIS.InputChanged, function(input)
 	if isPointerMove(input) then
 		if draggingMenu then
@@ -2521,7 +2521,7 @@ bindConnection(UIS.InputChanged, function(input)
 			P.Position = UDim2.new(frameStartPos.X.Scale, frameStartPos.X.Offset + delta.X, frameStartPos.Y.Scale, frameStartPos.Y.Offset + delta.Y)
 		elseif draggingOpenBtn then
 			local delta = input.Position - openBtnDragStart
-			if delta.Magnitude > 8 then
+			if delta.Magnitude > 10 then
 				openBtnMoved = true
 				OpenMenuBtn.Position = UDim2.new(openBtnStartPos.X.Scale, openBtnStartPos.X.Offset + delta.X, openBtnStartPos.Y.Scale, openBtnStartPos.Y.Offset + delta.Y)
 			end
@@ -2533,9 +2533,6 @@ end)
 
 bindConnection(UIS.InputEnded, function(input)
 	if isPointerInput(input) then
-		if draggingOpenBtn and not openBtnMoved then
-			P.Visible = not P.Visible
-		end
 		draggingMenu = false
 		draggingOpenBtn = false
 		activeSliderUpdate = nil
@@ -2594,7 +2591,7 @@ end)
 
 -- Сворачивание и полная очистка
 local minimized = false
-MinBtn.MouseButton1Click:Connect(function()
+MinBtn.Activated:Connect(function()
 	minimized = not minimized
 	SF.Visible = not minimized
 	P.Size = minimized and UDim2.new(0, menuWidth, 0, 36) or UDim2.new(0, menuWidth, 0, menuHeight)
@@ -2641,7 +2638,7 @@ local function fullCleanup()
 end
 
 _G.BaggetCleanup = fullCleanup
-CB.MouseButton1Click:Connect(fullCleanup)
+CB.Activated:Connect(fullCleanup)
 
 -- Авто-перепривязка при респавне
 bindConnection(LP.CharacterAdded, function()
